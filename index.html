@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager Pro</title>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --bg: #f3f4f6;
+            --card: #ffffff;
+            --text: #1f2937;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: var(--card);
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        h1, h2 { text-align: center; color: var(--primary); }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        button:hover { opacity: 0.9; }
+        button.secondary { background-color: #9ca3af; }
+        button.danger { background-color: var(--danger); width: auto; padding: 5px 10px; font-size: 0.8rem;}
+
+        .hidden { display: none; }
+        .error { color: var(--danger); text-align: center; margin-top: 5px; font-size: 0.9rem;}
+
+        /* Task List Styles */
+        ul { list-style: none; padding: 0; }
+        li {
+            background: #f9fafb;
+            border-bottom: 1px solid #eee;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            border-radius: 6px;
+        }
+        li.completed span { text-decoration: line-through; color: #9ca3af; }
+        
+        .task-actions { display: flex; gap: 5px; }
+        .logout-btn { margin-bottom: 20px; background-color: var(--danger); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="auth-section">
+            <h1 id="form-title">Вхід</h1>
+            <input type="text" id="username" placeholder="Ім'я користувача (тільки для реєстрації)" class="hidden">
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Пароль">
+            <button id="submit-btn" onclick="handleAuth()">Увійти</button>
+            <p id="error-msg" class="error"></p>
+            <button class="secondary" onclick="toggleAuthMode()" id="toggle-btn">Немає акаунту? Реєстрація</button>
+        </div>
+
+        <div id="tasks-section" class="hidden">
+            <button class="logout-btn" onclick="logout()">Вийти</button>
+            <h2>Мої Завдання</h2>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="new-task" placeholder="Нове завдання...">
+                <button style="width: auto;" onclick="createTask()">+</button>
+            </div>
+            <ul id="task-list"></ul>
+        </div>
+    </div>
+
+    <script>
+        // ВАЖЛИВО: Це адреса твого локального сервера
+        const API_URL = 'https://https://pr9file.onrender.com/api';
+        
+        let isLoginMode = true;
+        let token = localStorage.getItem('token');
+
+        // Ініціалізація
+        if (token) {
+            showTasks();
+        }
+
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('form-title').innerText = isLoginMode ? 'Вхід' : 'Реєстрація';
+            document.getElementById('submit-btn').innerText = isLoginMode ? 'Увійти' : 'Зареєструватися';
+            document.getElementById('toggle-btn').innerText = isLoginMode ? 'Немає акаунту? Реєстрація' : 'Вже є акаунт? Увійти';
+            document.getElementById('username').classList.toggle('hidden', isLoginMode);
+            document.getElementById('error-msg').innerText = '';
+        }
+
+        async function handleAuth() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const username = document.getElementById('username').value;
+            
+            const endpoint = isLoginMode ? '/auth/login' : '/auth/register';
+            const body = isLoginMode ? { email, password } : { username, email, password };
+
+            try {
+                const res = await fetch(`${API_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                if (!res.ok) throw new Error(data.message || 'Помилка');
+
+                localStorage.setItem('token', data.token);
+                token = data.token;
+                showTasks();
+            } catch (err) {
+                document.getElementById('error-msg').innerText = err.message;
+            }
+        }
+
+        function showTasks() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('tasks-section').classList.remove('hidden');
+            loadTasks();
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            location.reload();
+        }
+
+        async function loadTasks() {
+            const res = await fetch(`${API_URL}/tasks`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.status === 401) return logout();
+            const tasks = await res.json();
+            renderTasks(tasks);
+        }
+
+        function renderTasks(tasks) {
+            const list = document.getElementById('task-list');
+            list.innerHTML = '';
+            tasks.forEach(task => {
+                const li = document.createElement('li');
+                li.className = task.completed ? 'completed' : '';
+                li.innerHTML = `
+                    <span onclick="toggleTask('${task._id}', ${!task.completed})" style="cursor:pointer">${task.title}</span>
+                    <div class="task-actions">
+                        <button class="danger" onclick="deleteTask('${task._id}')">X</button>
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        async function createTask() {
+            const title = document.getElementById('new-task').value;
+            if (!title) return;
+            await fetch(`${API_URL}/tasks`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ title })
+            });
+            document.getElementById('new-task').value = '';
+            loadTasks();
+        }
+
+        async function deleteTask(id) {
+            await fetch(`${API_URL}/tasks/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            loadTasks();
+        }
+
+        async function toggleTask(id, status) {
+            await fetch(`${API_URL}/tasks/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ completed: status })
+            });
+            loadTasks();
+        }
+    </script>
+</body>
+</html>
